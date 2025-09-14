@@ -1,3 +1,8 @@
+# Audio files
+*.mp3
+*.wav
+*.ogg
+*.flac
 # Packages
 node_modules
 

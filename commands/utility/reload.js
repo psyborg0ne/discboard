@@ -1,4 +1,5 @@
 const { SlashCommandBuilder } = require('discord.js');
+const path = require('node:path');
 
 module.exports = {
 	category: 'utility',
@@ -13,14 +14,20 @@ module.exports = {
 		const commandName = interaction.options.getString('command', true).toLowerCase();
 		const command = interaction.client.commands.get(commandName);
 
-		if (!command) {
-			return interaction.reply(`There is no command with name \`${commandName}\`!`);
-		}
-
-		delete require.cache[require.resolve(`../${command.category}/${command.data.name}.js`)];
-
 		try {
-	        const newCommand = require(`../${command.category}/${command.data.name}.js`);
+			if (!command) {
+				return interaction.reply(`There is no command with name \`${commandName}\`!`);
+			}
+
+			const commandPath = path.join(__dirname, '..', command.category, `${command.data.name}.js`);
+
+			if (!commandPath) {
+				return interaction.reply(`The command \`${commandName}\` does not have a valid file path!`);
+			}
+
+			delete require.cache[require.resolve(commandPath)];
+
+	        const newCommand = require(commandPath);
 	        interaction.client.commands.set(newCommand.data.name, newCommand);
 	        await interaction.reply(`Command \`${newCommand.data.name}\` was reloaded!`);
 		}

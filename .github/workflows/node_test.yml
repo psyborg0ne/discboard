@@ -84,27 +84,38 @@ jobs:
         with:
           path: results
 
-      - name: Aggregate results
+      - name: Build results summary
         run: |
-                summary="✅ Node.js CI Results:\n"
-                for file in results/result-*/*; do
-                  node_version=$(cut -d' ' -f1 "$file")
-                  status=$(cut -d' ' -f2 "$file")
+          summary="\n\n📊 CI Results:\n"
+          for file in results/result-*/*; do
+            node_version=$(cut -d' ' -f1 "$file")
+            status=$(cut -d' ' -f2 "$file")
 
-                  if [ "$status" = "success" ]; then
-                    summary="$summary• Node.js **$node_version** → ✅ Passed\n"
-                  else
-                    summary="$summary• Node.js **$node_version** → ❌ Failed\n"
-                  fi
-                done
+            if [ "$status" = "success" ]; then
+              summary="$summary• Node.js **$node_version** → ✅ Passed\n"
+            else
+              summary="$summary• Node.js **$node_version** → ❌ Failed\n"
+            fi
+          done
 
-                echo -e "$summary" > discord_message.txt
+          echo -e "$summary" > results_summary.txt
 
-      - name: Update original Discord message
+      - name: Append results to original Discord message
         run: |
-          content=$(cat discord_message.txt)
+          # Fetch the original message content
+          original=$(curl -s \
+            -H "Authorization: Bot ${{ secrets.DISCORD_TOKEN }}" \
+            "https://discord.com/api/v10/channels/${{ secrets.DISCORD_TEXT_DEV_CHANNEL_ID }}/messages/${{ needs.notify-start.outputs.message_id }}" \
+            | jq -r .content)
+
+          # Combine original + results
+          results=$(cat results_summary.txt)
+          content="${original}${results}"
+
+          # Prepare JSON payload
           payload=$(jq -n --arg c "$content" '{content:$c}')
 
+          # Update the message
           curl -s -X PATCH \
             -H "Authorization: Bot ${{ secrets.DISCORD_TOKEN }}" \
             -H "Content-Type: application/json" \

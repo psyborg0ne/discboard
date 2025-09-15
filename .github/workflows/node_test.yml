@@ -10,8 +10,30 @@ on:
     branches: [ "master" ]
 
 jobs:
-  build:
 
+  notify-start:
+    runs-on: ubuntu-latest
+    outputs:
+      message_id: ${{ steps.discord.outputs.id }}
+    steps:
+      - name: Set run URL
+        id: seturl
+        run: |
+          echo "url=https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> $GITHUB_OUTPUT
+
+      - name: Send initial Discord message
+        id: discord
+        run: |
+          response=$(curl -s -X POST \
+            -H "Authorization: Bot ${{ secrets.DISCORD_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"content\": \"🔨 CI started\n👉 [View run](${{ steps.seturl.outputs.url }})\"}" \
+            "https://discord.com/api/v10/channels/${{ secrets.DISCORD_TEXT_DEV_CHANNEL_ID }}/messages")
+
+          echo "id=$(echo $response | jq -r .id)" >> $GITHUB_OUTPUT
+
+  build:
+    needs: notify-start
     runs-on: ubuntu-latest
 
     strategy:
@@ -26,17 +48,6 @@ jobs:
       with:
         node-version: ${{ matrix.node-version }}
         cache: 'npm'
-
-    - name: Send start message to Discord
-      id: discord_start
-      run: |
-        response=$(curl -s -X POST \
-          -H "Authorization: Bot ${{ secrets.DISCORD_TOKEN }}" \
-          -H "Content-Type: application/json" \
-          -d '{"content": "🔨 Build started for commit `${{ github.sha }}`"}' \
-          "https://discord.com/api/v10/channels/${{ secrets.DISCORD_TEXT_DEV_CHANNEL_ID }}/messages")
-
-        echo "id=$(echo $response | jq -r .id)" >> $GITHUB_OUTPUT
 
     - name: Install dependencies
       run: npm ci
@@ -53,20 +64,24 @@ jobs:
     - name: Run Jest tests
       run: npm test
 
-    - name: Update message with result
+    - name: Report success to Discord
       if: success()
       run: |
         curl -s -X PATCH \
           -H "Authorization: Bot ${{ secrets.DISCORD_TOKEN }}" \
           -H "Content-Type: application/json" \
-          -d '{"content": "✅ Build succeeded for commit `${{ github.sha }}`"}' \
-          "https://discord.com/api/v10/channels/${{ secrets.DISCORD_TEXT_DEV_CHANNEL_ID }}/messages/${{ steps.discord_start.outputs.id }}"
+          -d "{\"content\": \"$(curl -s \
+            -H 'Authorization: Bot ${{ secrets.DISCORD_TOKEN }}' \
+            https://discord.com/api/v10/channels/${{ secrets.DISCORD_TEXT_DEV_CHANNEL_ID }}/messages/${{ needs.notify-start.outputs.message_id }} | jq -r .content)\n• Node.js **${{ matrix.node-version }}** → ✅ Passed\"}" \
+          "https://discord.com/api/v10/channels/${{ secrets.DISCORD_TEXT_DEV_CHANNEL_ID }}/messages/${{ needs.notify-start.outputs.message_id }}"
 
-    - name: Update message with failure
+    - name: Report failure to Discord
       if: failure()
       run: |
         curl -s -X PATCH \
           -H "Authorization: Bot ${{ secrets.DISCORD_TOKEN }}" \
           -H "Content-Type: application/json" \
-          -d '{"content": "❌ Build failed for commit `${{ github.sha }}`"}' \
-          "https://discord.com/api/v10/channels/${{ secrets.DISCORD_TEXT_DEV_CHANNEL_ID }}/messages/${{ steps.discord_start.outputs.id }}"
+          -d "{\"content\": \"$(curl -s \
+            -H 'Authorization: Bot ${{ secrets.DISCORD_TOKEN }}' \
+            https://discord.com/api/v10/channels/${{ secrets.DISCORD_TEXT_DEV_CHANNEL_ID }}/messages/${{ needs.notify-start.outputs.message_id }} | jq -r .content)\n• Node.js **${{ matrix.node-version }}** → ❌ Failed\"}" \
+          "https://discord.com/api/v10/channels/${{ secrets.DISCORD_TEXT_DEV_CHANNEL_ID }}/messages/${{ needs.notify-start.outputs.message_id }}"

@@ -27,6 +27,17 @@ jobs:
         node-version: ${{ matrix.node-version }}
         cache: 'npm'
 
+    - name: Send start message to Discord
+      id: discord_start
+      run: |
+        response=$(curl -s -X POST \
+          -H "Authorization: Bot ${{ secrets.DISCORD_TOKEN }}" \
+          -H "Content-Type: application/json" \
+          -d '{"content": "🔨 Build started for commit `${{ github.sha }}`"}' \
+          "https://discord.com/api/v10/channels/${{ secrets.DISCORD_TEXT_DEV_CHANNEL_ID }}/messages")
+
+        echo "id=$(echo $response | jq -r .id)" >> $GITHUB_OUTPUT
+
     - name: Install dependencies
       run: npm ci
 
@@ -41,3 +52,21 @@ jobs:
 
     - name: Run Jest tests
       run: npm test
+
+    - name: Update message with result
+      if: success()
+      run: |
+        curl -s -X PATCH \
+          -H "Authorization: Bot ${{ secrets.DISCORD_TOKEN }}" \
+          -H "Content-Type: application/json" \
+          -d '{"content": "✅ Build succeeded for commit `${{ github.sha }}`"}' \
+          "https://discord.com/api/v10/channels/${{ secrets.DISCORD_TEXT_DEV_CHANNEL_ID }}/messages/${{ steps.discord_start.outputs.id }}"
+
+    - name: Update message with failure
+      if: failure()
+      run: |
+        curl -s -X PATCH \
+          -H "Authorization: Bot ${{ secrets.DISCORD_TOKEN }}" \
+          -H "Content-Type: application/json" \
+          -d '{"content": "❌ Build failed for commit `${{ github.sha }}`"}' \
+          "https://discord.com/api/v10/channels/${{ secrets.DISCORD_TEXT_DEV_CHANNEL_ID }}/messages/${{ steps.discord_start.outputs.id }}"
